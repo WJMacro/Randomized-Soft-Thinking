@@ -1,27 +1,23 @@
-# 🧠 Soft Thinking: Unlocking the Reasoning Potential of LLMs in Continuous Concept Space
+# 🧠 LLMs are Single-threaded Reasoners: Demystifying the Working Mechanism of Soft Thinking
 
 <p>
-  <a href="https://arxiv.org/abs/2505.15778">
-    <img src="https://img.shields.io/badge/arXiv-2505.15778-b31b1b.svg?style=flat" alt="arXiv">
+  <a href="https://arxiv.org/abs/2508.03440">
+    <img src="https://img.shields.io/badge/arXiv-2508.03440-b31b1b.svg?style=flat" alt="arXiv">
   </a>
 
-<a href="https://huggingface.co/papers/2505.15778">
+<a href="https://huggingface.co/papers/2508.03440">
     <img src="https://img.shields.io/badge/HuggingFace-Paper-orange.svg?style=flat" alt="Hugging Face Papers">
   </a>
 </p>
 
-This is the official implementation of the paper: [Soft Thinking: Unlocking the Reasoning Potential of LLMs in Continuous Concept Space](https://arxiv.org/abs/2505.15778)
-
-<p align="center">
-  <img src="./imgs/softthinking.png" alt="Soft Thinking" width="400"/>
-</p>
+This is the official implementation of the paper: [LLMs are Single-threaded Reasoners: Demystifying the Working Mechanism of Soft Thinking](https://arxiv.org/abs/2508.03440)
 
 ## 🛠️ Re-development
 If you would like to build on top of this project, refer to `sglang_soft_thinking_pkg/README.md`, or review the differences from SGLang v0.4.6.post1 in `sglang_soft_thinking_pkg/diff_0.4.6.post1.txt`.
 
 ## 🎲 Soft Thinking with Random Perturbation
 
-Our implementation now includes support for Dirichlet and Gumbel-Softmax noise in Soft Thinking sampling, as detailed in the study [LLMs are Single-threaded Reasoners: Demystifying the Working Mechanism of Soft Thinking](https://arxiv.org/abs/2508.03440). For more details, see `scripts/st/qwq32b_gumble.sh`.
+This is a forked version of [Soft-Thinking](https://github.com/eric-ai-lab/Soft-Thinking), which includes support for Dirichlet and Gumbel-Softmax noise in Soft Thinking sampling. For more details, see `scripts/st/qwq32b_gumble.sh`.
 
 Relevant parameters:
 ```bash
@@ -163,54 +159,10 @@ python run_sglang_softthinking.py \
 Run the Soft Thinking script:
 
 ```bash
-bash scripts/st/qwq32b_st_math.sh
-```
-
-Or directly execute:
-
-```bash
-export OPENAI_API_KEY=""
-python run_sglang_softthinking.py \
-    --dataset "aime2024" \
-    --model_name "./models/Qwen/QwQ-32B" \
-    --max_topk 10 \
-    --max_generated_tokens 32768 \
-    --temperature 0.6 \
-    --top_p 0.95 \
-    --top_k 30 \
-    --min_p 0.001 \
-    --after_thinking_temperature 0.6 \
-    --after_thinking_top_p 0.95 \
-    --after_thinking_top_k 30 \
-    --after_thinking_min_p 0.0 \
-    --early_stopping_entropy_threshold 0.01 \
-    --early_stopping_length_threshold 256 \
-    --mem_fraction_static 0.8 \
-    --start_idx 0 \
-    --end_idx 100000 \
-    --num_gpus 8 \
-    --num_samples 1 \
-    --enable_soft_thinking \
-    --use_llm_judge \
-    --judge_model_name "gpt-4.1-2025-04-14" 
+bash scripts/st/qwq32b_gumble.sh
 ```
 
 When running **coding benchmarks (HumanEval, MBPP, and LiveCodeBench)**, start by executing without the `--reeval` flag. Then, run it again with the `--reeval` flag for evaluation. This is due to a multiprocessing bug.
-
-
-## 🔍 Hyperparameter Search
-We have uploaded results in `./results` for reproduction. We use the following hyperparameters:
-- `max_topk`: 10
-- `min_p`: 0.001
-- `early_stopping_entropy_threshold`: 0.01
-- `early_stopping_length_threshold`: 256
-
-For optimal results on each benchmark, adjust the following hyperparameters within these ranges:
-
-- `max_topk`: between 5 and 20
-- `min_p`: between 0.0 and 0.005
-- `early_stopping_entropy_threshold`: between 0.0 and 0.1
-- `early_stopping_length_threshold`: between 256 and 1024
 
 > **Note:**
 >
@@ -229,13 +181,21 @@ This project utilizes a modified version of the [SGLang](https://github.com/sgl-
 
 ## 📜 Citation
 
-If you use this code or dataset, please cite our paper:
+If you use this code or dataset, please cite these papers:
 
 ```bibtex
 @article{zhang2025soft,
   title={Soft Thinking: Unlocking the Reasoning Potential of LLMs in Continuous Concept Space},
   author={Zhang, Zhen and He, Xuehai and Yan, Weixiang and Shen, Ao and Zhao, Chenyang and Wang, Shuohang and Shen, Yelong and Wang, Xin Eric},
   journal={arXiv preprint arXiv:2505.15778},
+  year={2025}
+}
+
+@article{wu2025llms,
+  title={LLMs are Single-threaded Reasoners: Demystifying the Working Mechanism of Soft Thinking},
+  author={Wu, Ch{\"u}nhung and Lu, Jinliang and Ren, Zixuan and Hu, Gangqiang and Wu, Zhi and Dai, Dai and Wu, Hua},
+  journal={arXiv e-prints},
+  pages={arXiv--2508},
   year={2025}
 }
 ```
