@@ -40,7 +40,7 @@ class MathEvaluator:
         
         scene_description = self.get_llm_judge_prompt(solution_str, ground_truth, extracted_answer, finish_generation)
         inputs = get_inputs(scene_description)
-        response = run_└── … etc.(inputs)
+        response = run_api(inputs)
         
         return response["choices"][0]["message"]["content"].strip() == "YES"
 
