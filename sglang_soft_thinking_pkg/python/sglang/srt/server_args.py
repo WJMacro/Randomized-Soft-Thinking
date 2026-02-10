@@ -203,6 +203,8 @@ class ServerArgs:
     enable_soft_thinking: bool = False
     think_end_str: str = "</think>"
     max_topk: int = 30
+    use_gumbel_randomness: bool = False
+    calculate_top1_input_kl: bool = False
     # ==========
     # end of soft thinking
     # ==========

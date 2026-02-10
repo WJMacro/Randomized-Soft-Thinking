@@ -187,6 +187,8 @@ class ModelRunner:
         # begin of soft thinking
         # ==========
         self.enable_soft_thinking = server_args.enable_soft_thinking
+        self.use_gumbel_randomness = server_args.use_gumbel_randomness
+        self.calculate_top1_input_kl = server_args.calculate_top1_input_kl
         # ==========
         # end of soft thinking
         # ==========
@@ -999,11 +1001,38 @@ class ModelRunner:
         # begin of soft thinking
         # ==========
         if self.enable_soft_thinking:
-            return self.model.forward(
+            
+            original_topk_probs = forward_batch.topk_probs.clone().detach()
+            if self.calculate_top1_input_kl:
+                soft_mask = (forward_batch.topk_probs[:,1] > 0).view(-1)
+                token_forward_batch = forward_batch
+                token_forward_batch.topk_probs[:,:] = 0
+                token_forward_batch.topk_probs[:,0] = 1.0
+                top1_result = self.model.forward(
+                    None, 
+                    token_forward_batch.positions, 
+                    token_forward_batch,
+                )
+                # soft mask
+                token_forward_batch.topk_probs[:,:] = 0
+                token_forward_batch.topk_probs[soft_mask,1] = 1.0
+                token_forward_batch.topk_probs[~soft_mask,0] = 1.0
+                top2_result = self.model.forward(
+                    None,
+                    token_forward_batch.positions,
+                    token_forward_batch,
+                )
+            forward_batch.topk_probs=original_topk_probs
+            soft_result = self.model.forward(
                 None, 
                 forward_batch.positions, 
                 forward_batch,
             )
+
+            if self.calculate_top1_input_kl:
+                soft_result.token_input_next_token_logits = torch.stack((top1_result.next_token_logits, top2_result.next_token_logits), dim=0)
+            return soft_result
+                
         else:
             return self.model.forward(
                 forward_batch.input_ids, forward_batch.positions, forward_batch
@@ -1116,6 +1145,8 @@ class ModelRunner:
             forward_batch.top_logprobs_nums,
             forward_batch.token_ids_logprobs,  
             enable_soft_thinking=self.enable_soft_thinking,
+            use_gumbel_randomness=self.use_gumbel_randomness,
+            calculate_top1_input_kl=self.calculate_top1_input_kl,
         )   
 
         # ==========

@@ -595,8 +595,12 @@ class Req:
             # NOTE: 输入的部分暂时不进行保留。 shape: [output_len, K]
             self.output_topk_prob_list = []
             self.output_topk_idx_list = []
+            self.output_entropy_list = []
+            self.output_kl_list = []
             self.output_topk_prob_list_tmp = []
             self.output_topk_idx_list_tmp = []
+            self.output_entropy_list_tmp = []
+            self.output_kl_list_tmp = []
             # track consecutive low entropy steps for early stopping
             self.low_entropy_steps = 0
         # ==========
@@ -729,6 +733,7 @@ class Req:
         self.topk_prob = logits_output.topk_probs[index]
         self.topk_idx = logits_output.topk_indices[index]
         self.entropy = logits_output.entropy[index]
+        self.soft_top1_kl = logits_output.soft_top1_kl[index]
         # last_token_id = self.output_ids[-1]
 
         if self.sampling_params.soft_thinking_mode:
@@ -767,6 +772,8 @@ class Req:
         if not self.finished():
             self.output_topk_prob_list_tmp.append(self.topk_prob)
             self.output_topk_idx_list_tmp.append(self.topk_idx)
+            self.output_entropy_list_tmp.append(self.entropy)
+            self.output_kl_list_tmp.append(self.soft_top1_kl)
 
     def get_output_topk_prob_list(self):
         if self.output_topk_prob_list_tmp:
@@ -779,6 +786,18 @@ class Req:
             self.output_topk_idx_list.extend(torch.stack(self.output_topk_idx_list_tmp, dim=0).cpu().tolist())
             self.output_topk_idx_list_tmp = []
         return self.output_topk_idx_list
+    
+    def get_output_entropy_list(self):
+        if self.output_entropy_list_tmp:
+            self.output_entropy_list.extend(torch.stack(self.output_entropy_list_tmp, dim=0).cpu().tolist())
+            self.output_entropy_list_tmp = []
+        return self.output_entropy_list
+    
+    def get_output_kl_list(self):
+        if self.output_kl_list_tmp:
+            self.output_kl_list.extend(torch.stack(self.output_kl_list_tmp, dim=0).cpu().tolist())
+            self.output_kl_list_tmp = []
+        return self.output_kl_list
     # ==========
     # end of soft thinking
     # ==========

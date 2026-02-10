@@ -221,6 +221,7 @@ class CudaGraphRunner:
             set_torch_compile_config()
 
         self.enable_soft_thinking = model_runner.server_args.enable_soft_thinking
+        self.calculate_top1_input_kl = model_runner.server_args.calculate_top1_input_kl
         if self.enable_soft_thinking:
             self.max_topk = model_runner.server_args.max_topk
 

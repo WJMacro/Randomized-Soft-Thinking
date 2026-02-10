@@ -79,6 +79,7 @@ class LogitsProcessorOutput:
     # ==========
     topk_probs: Optional[torch.Tensor] = None
     topk_indices: Optional[torch.Tensor] = None
+    token_input_next_token_logits: Optional[torch.Tensor] = None
     # ==========
     # end of soft thinking
     # ==========

@@ -79,6 +79,8 @@ class SamplingBatchInfo:
     dirichlet_alphas: Optional[torch.Tensor] = None
     early_stopping_entropy_threshold: Optional[torch.Tensor] = None
     early_stopping_length_threshold: Optional[torch.Tensor] = None
+    entropy_threshold: Optional[torch.Tensor] = None
+    gumbel_temperature: Optional[torch.Tensor] = None
     # ==========
     # end of soft thinking
     # ==========
@@ -134,6 +136,15 @@ class SamplingBatchInfo:
         early_stopping_length_threshold = torch.tensor(
             [r.sampling_params.early_stopping_length_threshold for r in reqs], dtype=torch.int32
         ).to(device, non_blocking=True)
+        entropy_threshold = torch.tensor(
+                [r.sampling_params.entropy_threshold for r in reqs],
+                dtype=torch.float,
+        ).view(-1, 1).to(device, non_blocking=True)
+        gumbel_temperature = torch.tensor(
+                [r.sampling_params.gumbel_temperature for r in reqs],
+                dtype=torch.float,
+        ).view(-1, 1).to(device, non_blocking=True)
+        
         # ==========
         # end of soft thinking
         # ==========
@@ -223,6 +234,8 @@ class SamplingBatchInfo:
             enable_soft_thinking=batch.enable_soft_thinking,
             soft_thinking_modes=soft_thinking_modes,
             max_topk=max_topk,
+            entropy_threshold=entropy_threshold,
+            gumbel_temperature=gumbel_temperature,
             # ==========
             # end of soft thinking
             # ==========
@@ -310,6 +323,9 @@ class SamplingBatchInfo:
             filter_list.append("dirichlet_alphas")
             filter_list.append("early_stopping_entropy_threshold")
             filter_list.append("early_stopping_length_threshold")
+            filter_list.append("entropy_threshold")
+            filter_list.append("gumbel_temperature")
+
         
         for item in filter_list:
             value = getattr(self, item, None)
@@ -416,6 +432,8 @@ class SamplingBatchInfo:
             merge_list.append("dirichlet_alphas")
             merge_list.append("early_stopping_entropy_threshold")
             merge_list.append("early_stopping_length_threshold")
+            merge_list.append("entropy_threshold")
+            merge_list.append("gumbel_temperature")
 
         for item in merge_list:
             self_val = getattr(self, item, None)

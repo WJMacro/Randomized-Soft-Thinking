@@ -73,7 +73,26 @@ def main():
         type=int,
         default=30,
     )
-
+    parser.add_argument(
+            "--enable_entropy_threshold",
+            action="store_true",
+            help="Enable soft thinking mode"
+        )
+    parser.add_argument(
+            "--entropy_threshold",
+            type=float,
+            default=0.0,
+        )
+    parser.add_argument(
+            "--use_gumbel_randomness",
+            action="store_true",
+            help="Enable gumbel randomness"
+        )
+    parser.add_argument(
+            "--gumbel_temperature",
+            type=float,
+            default=0.0,
+        )
     args = parser.parse_args()
 
     dataset = args.dataset
@@ -183,12 +202,14 @@ Test Cases:
                        "n": 1,
                        "max_new_tokens": max_generated_tokens, "think_end_str": think_end_str,
                        "early_stopping_entropy_threshold": args.early_stopping_entropy_threshold,
-                       "early_stopping_length_threshold": args.early_stopping_length_threshold
+                       "early_stopping_length_threshold": args.early_stopping_length_threshold,
+                       "entropy_threshold": args.entropy_threshold,
+                       "gumbel_temperature": args.gumbel_temperature,
                     }
 
     os.makedirs(f"{args.output_dir}/results/{dataset}", exist_ok=True)
-    results_file = f"{args.output_dir}/results/{dataset}/{model_name.split('/')[-1]}_{dataset}_{args.enable_soft_thinking}_{args.num_samples}_{temperature}_{top_p}_{top_k}_{min_p}_{args.repetition_penalty}_{args.dirichlet_alpha}_{args.max_topk}_{max_generated_tokens}_{args.early_stopping_entropy_threshold}_{args.early_stopping_length_threshold}.json"
-    results_statistics_file = f"{args.output_dir}/results/{dataset}/{model_name.split('/')[-1]}_{dataset}_{args.enable_soft_thinking}_{args.num_samples}_{temperature}_{top_p}_{top_k}_{min_p}_{args.repetition_penalty}_{args.dirichlet_alpha}_{args.max_topk}_{max_generated_tokens}_{args.early_stopping_entropy_threshold}_{args.early_stopping_length_threshold}_statistics.json"
+    results_file = f"{args.output_dir}/results/{dataset}/{model_name.split('/')[-1]}_{dataset}_{args.enable_soft_thinking}_{args.num_samples}_{temperature}_{top_p}_{top_k}_{min_p}_{args.repetition_penalty}_{args.dirichlet_alpha}_{args.max_topk}_{max_generated_tokens}_{args.early_stopping_entropy_threshold}_{args.early_stopping_length_threshold}_{args.use_gumbel_randomness}_{args.gumbel_temperature}.json"
+    results_statistics_file = f"{args.output_dir}/results/{dataset}/{model_name.split('/')[-1]}_{dataset}_{args.enable_soft_thinking}_{args.num_samples}_{temperature}_{top_p}_{top_k}_{min_p}_{args.repetition_penalty}_{args.dirichlet_alpha}_{args.max_topk}_{max_generated_tokens}_{args.early_stopping_entropy_threshold}_{args.early_stopping_length_threshold}_{args.use_gumbel_randomness}_{args.gumbel_temperature}_statistics.json"
 
     results = []
 
@@ -238,11 +259,29 @@ Test Cases:
         decoded_text_list = []
         finish_generation_list = []
         generated_tokens_list = []
+        entropy_list = []
+        soft_token_list = []
+        soft_token_weights_list = []
         idx = 0
         while idx < len(prompt_list):
             print(f"Number of GPUs available: {num_gpus}", flush=True)
-            llm = sgl.Engine(model_path=model_name, tp_size=num_gpus, log_level="info", trust_remote_code=True, random_seed=random_seed, max_running_requests=max_running_requests, mem_fraction_static=mem_fraction_static, disable_cuda_graph=True, disable_overlap_schedule=True, enable_soft_thinking=args.enable_soft_thinking, max_topk=args.max_topk, cuda_graph_max_bs=args.cuda_graph_max_bs, sampling_backend=args.sampling_backend)
-            outputs =  llm.generate(prompt_list[idx:idx+max_batch], sampling_params)
+            llm = sgl.Engine(
+                model_path=model_name, 
+                tp_size=num_gpus, 
+                log_level="info", 
+                trust_remote_code=True, 
+                random_seed=random_seed, 
+                max_running_requests=max_running_requests, 
+                mem_fraction_static=mem_fraction_static, 
+                disable_cuda_graph=True, 
+                disable_overlap_schedule=True, 
+                enable_soft_thinking=args.enable_soft_thinking, 
+                use_gumbel_randomness=args.use_gumbel_randomness,
+                max_topk=args.max_topk, 
+                cuda_graph_max_bs=args.cuda_graph_max_bs, 
+                sampling_backend=args.sampling_backend,
+                )
+            outputs = llm.generate(prompt_list[idx:idx+max_batch], sampling_params)
             decoded_text_list.extend([o["text"] for o in outputs])
             finish_generation_list.extend([o["meta_info"]["finish_reason"] != "length" for o in outputs])
             generated_tokens_list.extend([o["meta_info"]["completion_tokens"] for o in outputs])
@@ -256,7 +295,7 @@ Test Cases:
     humanevaleval.init_evaluator()
 
     for i,idx in enumerate(idx_list):
-        print(idx, flush=True)
+        # print(idx, flush=True)
         sample = samples[idx]
         judge_info = []
         passat1_list = []

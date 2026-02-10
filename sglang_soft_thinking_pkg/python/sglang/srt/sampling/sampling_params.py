@@ -47,6 +47,8 @@ class SamplingParams:
         early_stopping_entropy_threshold: float = 0.0,
         early_stopping_length_threshold: int = 200,
         think_end_str: Optional[str] = None,
+        entropy_threshold: float = 0.0,
+        gumbel_temperature: float = 1.0,
         # ==========
         # end of soft thinking
         # ==========
@@ -87,6 +89,8 @@ class SamplingParams:
         self.early_stopping_length_threshold = early_stopping_length_threshold
         self.soft_thinking_mode = None
         self.think_end_str = think_end_str
+        self.entropy_threshold = entropy_threshold
+        self.gumbel_temperature = gumbel_temperature
         # ==========
         # end of soft thinking
         # ==========

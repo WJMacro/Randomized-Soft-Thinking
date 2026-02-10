@@ -4,6 +4,7 @@ from typing import List
 import torch
 import torch.distributed as dist
 from torch import nn
+import torch.nn.functional as F
 
 # ==========
 # begin of soft thinking
@@ -34,6 +35,17 @@ logger = logging.getLogger(__name__)
 
 SYNC_TOKEN_IDS_ACROSS_TP = get_bool_env_var("SYNC_TOKEN_IDS_ACROSS_TP")
 
+def calculate_js_divergence(logits, probs, log_input=False):
+    if log_input:
+        probs = torch.softmax(probs, dim=-1)
+        
+    # Post process logits
+    tmp_probs = torch.softmax(logits, dim=-1)
+    log_avg_prob = torch.log((probs+tmp_probs) * 0.5 + 1e-10)
+    js_div = 0.5 * (F.kl_div(log_avg_prob, tmp_probs + 1e-10, reduction='none').sum(dim=-1) + 
+        F.kl_div(log_avg_prob, probs + 1e-10, reduction='none').sum(dim=-1))
+    
+    return js_div
 
 class Sampler(nn.Module):
     def __init__(self):
@@ -55,6 +67,8 @@ class Sampler(nn.Module):
         # begin of soft thinking
         # ==========
         enable_soft_thinking: bool = False,
+        use_gumbel_randomness: bool = False,
+        calculate_top1_input_kl: bool = False,
         # ==========
         # end of soft thinking
         # ==========
@@ -156,15 +170,37 @@ class Sampler(nn.Module):
                 # ==========
                 max_top_k_round, batch_size = 32, probs.shape[0]
                 if enable_soft_thinking:
+
                     # 计算熵
                     entropy = -torch.sum(probs * torch.log(probs.clamp(min=1e-12)), dim=-1)
+                    entropy = entropy / torch.log(torch.tensor(probs.shape[-1], dtype=probs.dtype, device=probs.device))
+                    # nor
                     soft_mask = sampling_info.soft_thinking_modes # Shape (B,)
+
+                    # 计算只使用top1输入的KL散度
+                    if calculate_top1_input_kl and logits_output.token_input_next_token_logits is not None:
+                        top1_divergence = calculate_js_divergence(
+                            logits_output.token_input_next_token_logits[0].div_(sampling_info.temperatures),
+                            probs
+                            )
+                        top2_divergence = calculate_js_divergence(
+                            logits_output.token_input_next_token_logits[1].div_(sampling_info.temperatures),
+                            probs
+                            )
+                        top1_top2_divergence = calculate_js_divergence(
+                            logits_output.token_input_next_token_logits[0],
+                            logits_output.token_input_next_token_logits[1],
+                            log_input=True
+                        )
+                        logits_output.soft_top1_kl = torch.stack((top1_divergence, top2_divergence, top1_top2_divergence), dim=-1)
+                    else:
+                        B = soft_mask.shape[0]
+                        logits_output.soft_top1_kl = torch.zeros((B,3)).to(entropy.device)
+                    
                     top_ps = torch.where(soft_mask, sampling_info.top_ps, sampling_info.after_thinking_top_ps)
                     top_ks = torch.where(soft_mask, sampling_info.top_ks, sampling_info.after_thinking_top_ks)
                     min_ps = torch.where(soft_mask, sampling_info.min_ps, sampling_info.after_thinking_min_ps)
                     dirichlet_alphas = sampling_info.dirichlet_alphas
-
-
 
                     # top k top p renorm
                     probs = top_k_renorm_prob(probs, top_ks)
@@ -178,17 +214,44 @@ class Sampler(nn.Module):
                         probs.masked_fill_(min_p_mask, 0.0)
                         probs = probs / probs.sum(dim=-1, keepdim=True)
 
+                    original_probs = probs.clone()
+                    original_probs = top_k_renorm_prob(original_probs, sampling_info.max_topk)
+
                     # Dirichlet
                     if not sampling_info.is_all_no_noise: # slow
+
+                        non_zero_probs_mask = (probs > 1e-7)
+                        # dirichlet_alphas = (dirichlet_alphas - torch.tensor(0.5)) * entropy + torch.tensor(0.5)
                         conc = probs[soft_mask] * dirichlet_alphas[soft_mask].view(-1, 1)
                         gamma_dist = torch.distributions.Gamma(conc, torch.ones_like(conc))
                         gamma_samples = gamma_dist.sample()
                         probs_new = gamma_samples / gamma_samples.sum(dim=-1, keepdim=True)
-                        probs[soft_mask] = probs_new
+                        probs_new = probs_new * non_zero_probs_mask[soft_mask]
+                        probs[soft_mask] = probs_new / probs_new.sum(dim=-1, keepdim=True)
 
                     # max top k
                     topk_probs, topk_indices = torch.topk(probs, k=sampling_info.max_topk, dim=-1) # slow
                     topk_probs = topk_probs / (topk_probs.sum(dim=-1, keepdim=True))
+
+                    if use_gumbel_randomness:
+                        topk_logits = torch.log(topk_probs)
+                        topk_probs = F.gumbel_softmax(topk_logits, tau=sampling_info.gumbel_temperature)
+                    
+
+                    sorted_weights, sorted_idx = torch.sort(topk_probs, dim=-1, descending=True)
+                    topk_probs = sorted_weights
+                    topk_indices = torch.gather(topk_indices, dim=1, index=sorted_idx)
+
+                    if calculate_top1_input_kl:
+                        new_probs = torch.zeros_like(original_probs)
+                        new_probs.scatter_(1, topk_indices, topk_probs)
+
+                        random_js_div = calculate_js_divergence(
+                            new_probs,
+                            original_probs,
+                        )
+                        logits_output.soft_top1_kl = torch.cat((logits_output.soft_top1_kl, random_js_div.unsqueeze(-1)), dim=-1)
+
 
                     # orginal sampling (after thinking)
                     non_soft_mask = ~soft_mask
@@ -202,6 +265,7 @@ class Sampler(nn.Module):
                         # Assign the first element of each row to sampled_token_ids and set it to 1.0 in topk_probs
                         topk_probs[non_soft_mask, 0] = 1.0
                         topk_indices[non_soft_mask, 0] = sampled_token_ids[non_soft_mask].view(-1)
+                    
 
                     logits_output.topk_probs = topk_probs
                     logits_output.topk_indices = topk_indices
@@ -407,6 +471,7 @@ def top_k_top_p_min_p_dirichlet_alpha_sampling_from_probs_torch(
     probs: torch.Tensor,
     logits_output: LogitsProcessorOutput,
     sampling_info: SamplingBatchInfo,
+    enable_entropy_threshold: bool = False,
 ):
     """A top-k, top-p and min-p sampling implementation with native pytorch operations."""
     temperature = sampling_info.temperatures
@@ -454,6 +519,9 @@ def top_k_top_p_min_p_dirichlet_alpha_sampling_from_probs_torch(
     # 根据排序索引重排原先的 topk_indices
     dirichlet_topk_indices = torch.gather(topk_indices, dim=1, index=sorted_idx)
 
+    # # introduce gumbel randomness
+    # dirichlet_topk_logits = torch.log(dirichlet_topk_probs)
+    # dirichlet_topk_probs = F.gumbel_softmax(dirichlet_topk_logits, tau=sampling_info.gumbel_temperature)
 
     # Mode 0: one-hot 和采样索引
     sampled_indices = torch.multinomial(topk_probs, num_samples=1)  # (B, 1)
@@ -463,10 +531,23 @@ def top_k_top_p_min_p_dirichlet_alpha_sampling_from_probs_torch(
 
     # 根据 soft_thinking_modes 合并
     soft_thinking_modes = sampling_info.soft_thinking_modes
-    one_hot_probs[soft_thinking_modes] = dirichlet_topk_probs[soft_thinking_modes].to(logits_output.hidden_states.dtype)
-    one_hot_indices[soft_thinking_modes] = dirichlet_topk_indices[soft_thinking_modes]
-    combined_probs = one_hot_probs
-    combined_indices = one_hot_indices
+    conbined_probs = dirichlet_topk_probs.to(logits_output.hidden_states.dtype)
+    conbined_indices = dirichlet_topk_indices.to(logits_output.hidden_states.dtype)
+
+    combined_probs[~soft_thinking_modes] = 0.0
+    combined_indices[~soft_thinking_modes] = 0
+
+    combined_probs[~soft_thinking_modes, 0] = 1.0
+    combined_indices[~soft_thinking_modes, 0] = sampled_token_ids[~soft_thinking_modes].view(-1)
+
+    if enable_entropy_threshold:
+        entropies = -torch.sum(probs * torch.log(probs.clamp(min=1e-12)), dim=-1)
+        entropy_mask = entropies < entropy_threshold
+        
+        conbined_probs[~soft_thinking_modes] = 0.0
+        conbined_indices[~soft_thinking_modes, 0] = sampled_token_ids[~soft_thinking_modes].view(-1)
+        
+
 
     # Store the results separately
     logits_output.topk_probs = combined_probs  # (B, K)

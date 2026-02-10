@@ -1065,6 +1065,12 @@ class TokenizerManager:
                 meta_info["output_topk_idx_list"] = (
                     recv_obj.output_topk_indices_list[i]
                 ) 
+                meta_info["output_entropy_list"] = (
+                    recv_obj.output_entropy_list[i]
+                )
+                meta_info["output_kl_list"] = (
+                    recv_obj.output_kl_list[i]
+                )
 
             if not isinstance(recv_obj, BatchEmbeddingOut):
                 meta_info.update(
