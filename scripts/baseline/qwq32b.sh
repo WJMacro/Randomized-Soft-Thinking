@@ -12,12 +12,4 @@ python run_sglang_softthinking.py \
     --start_idx 0 \
     --end_idx 10000 \
     --num_gpus 8 \
-    --num_samples 16  \
-    --use_llm_judge \
-    --api_base "<replace it>" \
-    --deployment_name "<replace it>" \
-    --api_version "<replace it>" \
-    --api_key "<replace it>" \
-    --push_results_to_hf \
-    --hf_repo_id "<replace it>" \
-    --hf_token "<replace it>" \
+    --num_samples 16  
